@@ -3010,18 +3010,35 @@ static void accel_move_code_to_huge_pages(void)
 		long unsigned int  start, end, offset, inode;
 		char perm[5], dev[10], name[MAXPATHLEN];
 		int ret;
+		int should_pass_flag=0; //1: yes 0:no
+		char buffer[MAXPATHLEN];
 
-		while (1) {
-			ret = fscanf(f, "%lx-%lx %4s %lx %9s %ld %s\n", &start, &end, perm, &offset, dev, &inode, name);
-			if (ret == 7) {
-				if (perm[0] == 'r' && perm[1] == '-' && perm[2] == 'x' && name[0] == '/') {
+		while (should_pass_flag || fgets(buffer, MAXPATHLEN, f)) {
+			if (should_pass_flag){
+				should_pass_flag = 0;
+			}
+			ret = sscanf(buffer, "%lx-%lx %4s %lx %9s %ld %s\n", &start, &end, perm, &offset, dev, &inode, name);
+			if (ret >= 6) {
+				// heap seg, break out.
+				if (name[0] == '[') {
+					break;
+				}
+				if (perm[0] == 'r' && perm[1] == '-' && perm[2] == 'x' && perm[3] == 'p' && name[0] == '/') {
 					long unsigned int  seg_start = ZEND_MM_ALIGNED_SIZE_EX(start, huge_page_size);
 					long unsigned int  seg_end = (end & ~(huge_page_size-1L));
 					long unsigned int  real_end;
+					long unsigned int old_start = start;
+					long unsigned int old_end = end;
+					long unsigned int old_offset = offset;
 
-					ret = fscanf(f, "%lx-", &start);
-					if (ret == 1 && start == seg_end + huge_page_size) {
-						real_end = end;
+					if (fgets(buffer, MAXPATHLEN, f)){
+						should_pass_flag=1;
+						ret = sscanf(buffer, "%lx-%lx %4s %lx %9s %ld %s\n", &start, &end, perm, &offset, dev, &inode, name);
+					}else{
+						break;
+					}
+					if (ret >= 6 && start >= seg_end + huge_page_size) {
+						real_end = old_end;
 						seg_end = start;
 					} else {
 						real_end = seg_end;
@@ -3029,12 +3046,9 @@ static void accel_move_code_to_huge_pages(void)
 
 					if (seg_end > seg_start) {
 						zend_accel_error(ACCEL_LOG_DEBUG, "remap to huge page %lx-%lx %s \n", seg_start, seg_end, name);
-						accel_remap_huge_pages((void*)seg_start, seg_end - seg_start, real_end - seg_start, name, offset + seg_start - start);
+						accel_remap_huge_pages((void*)seg_start, seg_end - seg_start, real_end - seg_start, name, old_offset + seg_start - start);
 					}
-					break;
 				}
-			} else {
-				break;
 			}
 		}
 		fclose(f);
