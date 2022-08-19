@@ -63,6 +63,16 @@
 # include <sanitizer/common_interface_defs.h>
 #endif
 
+# if defined __CET__
+#  include <cet.h>
+#  define SHSTK_ENABLED (__CET__ & 0x2)
+#  define ZEND_FIBER_SHADOW_STACK (SHSTK_ENABLED && SHADOW_STACK_SYSCALL)
+#  define __NR_map_shadow_stack 451
+# ifndef SHADOW_STACK_SET_TOKEN
+#  define SHADOW_STACK_SET_TOKEN 0x1
+#endif
+#endif
+
 /* Encapsulates the fiber C stack with extension for debugging tools. */
 struct _zend_fiber_stack {
 	void *pointer;

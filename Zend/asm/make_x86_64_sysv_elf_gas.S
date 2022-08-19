@@ -26,6 +26,8 @@
 
 # if defined __CET__
 #  include <cet.h>
+#  define SHSTK_ENABLED (__CET__ & 0x2)
+#  define ZEND_FIBER_SHADOW_STACK SHSTK_ENABLED
 # else
 #  define _CET_ENDBR
 # endif
@@ -67,13 +69,76 @@ make_fcontext:
     /* will be entered after context-function returns */
     movq  %rcx, 0x30(%rax)
 
+#if ZEND_FIBER_SHADOW_STACK
+    /* step1 allocate new shadow stack via syscall */
+    /* TODO: save rax in r8(maybe a better way) before syscall */
+    movq  %rax, %r8
+    /* second arg of make_fcontext() == new stack size */
+    /* TODO: shift right 5bits, then get the size of new shadow stack,
+    store in RSI as the third arg for syscall */
+	movq  $4096, %rax
+    movq  %rax, %rsi
+
+	/* the forth arg for syscall == shadow stack set token */
+    movq  $0x1, %rax
+    movq  %rax, %rdx
+    /* the second arg for syscall*/
+    movq  $0x0, %rdi
+
+    /* store syscall number in rax, 0x1c3=451, 
+    which is the syscall number for map shadow stack*/
+	movq  $0x1c3, %rax
+    /* The base address of new shadow stack should be return in rax */
+	syscall
+	/* TODO: Get the top of new shadow stack.*/
+    addq  $4096, %rax
+    movq  %rax, %r9
+    /* restore rax because need to use r8 later */
+    movq  %r8, %rax
+
+    /* Populate the shadow stack and normal stack */
+    /* get original SSP */
+    rdsspq  %r8
+    /* restore new shadow stack */
+    rstorssp  -0x8(%r9)
+    /* save the restore token on the original shadow stack */
+    saveprevssp
+    /* push the address of "jmp trampoline" to the new shadow stack */
+    /* as well as the stack */
+    call  1f
+    jmp  trampoline
+1:
+    /* save address of "jmp trampoline" as return-address */
+    /* for context-function */
+    pop 0x38(%rax)
+    /* Get the new SSP. */
+    rdsspq  %r9
+    /* restore original shadow stack */
+    rstorssp  -0x8(%r8)
+    /* save the restore token on the new shadow stack.  */
+    saveprevssp
+
+    /* reserve space for the new SSP */
+    leaq  -0x8(%rax), %rax
+    /* save the new SSP to this fcontext */
+    movq  %r9, (%rax)
+#endif
+
     ret /* return pointer to context-data */
 
 trampoline:
     /* store return address on stack */
     /* fix stack alignment */
     _CET_ENDBR
+#if ZEND_FIBER_SHADOW_STACK
+    /* save address of "jmp *%rbp" as return-address */
+    /* on stack and shadow stack */
+    call  2f
+    jmp  *%rbp
+2:
+#else
     push %rbp
+#endif
     /* jump to context-function */
     jmp *%rbx
 
