@@ -3126,6 +3126,7 @@ static int zend_jit_set_ip(dasm_State **Dst, const zend_op *opline)
 
 static int zend_jit_set_ip_ex(dasm_State **Dst, const zend_op *opline, bool set_ip_reg)
 {
+	|	ENDBR
 	if (last_valid_opline == opline) {
 		zend_jit_use_last_valid_opline();
 	} else if (GCC_GLOBAL_REGS && last_valid_opline) {
@@ -3214,6 +3215,7 @@ static int zend_jit_check_exception_undef_result(dasm_State **Dst, const zend_op
 
 static int zend_jit_trace_begin(dasm_State **Dst, uint32_t trace_num, zend_jit_trace_info *parent, uint32_t exit_num)
 {
+	|	ENDBR
 	zend_regset regset = ZEND_REGSET_SCRATCH;
 
 #if ZTS
@@ -15026,6 +15028,7 @@ static int zend_jit_switch(dasm_State **Dst, const zend_op *opline, const zend_o
 					} while (count);
 					|.code
 					|3:
+					|	ENDBR
 				} else {
 					|	LOAD_ADDR FCARG1a, jumptable
 					|	EXT_CALL zend_hash_index_find, r0
@@ -15033,6 +15036,7 @@ static int zend_jit_switch(dasm_State **Dst, const zend_op *opline, const zend_o
 						return 0;
 					}
 					|3:
+					|	ENDBR
 				}
 			}
 		} else if (opline->opcode == ZEND_SWITCH_STRING) {
@@ -15074,6 +15078,7 @@ static int zend_jit_switch(dasm_State **Dst, const zend_op *opline, const zend_o
 					return 0;
 				}
 				|3:
+				|	ENDBR
 			}
 		} else if (opline->opcode == ZEND_MATCH) {
 			if (op1_info & (MAY_BE_LONG|MAY_BE_STRING)) {
