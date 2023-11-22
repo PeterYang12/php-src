@@ -3039,28 +3039,40 @@ static void accel_move_code_to_huge_pages(void)
 		long unsigned int  start, end, offset, inode;
 		char perm[5], dev[10], name[MAXPATHLEN];
 		int ret;
+		extern char *__progname;
+		char buffer[MAXPATHLEN];
 
-		while (1) {
-			ret = fscanf(f, "%lx-%lx %4s %lx %9s %lu %s\n", &start, &end, perm, &offset, dev, &inode, name);
-			if (ret == 7) {
+		while (fgets(buffer, MAXPATHLEN, f)) {
+			ret = sscanf(buffer, "%lx-%lx %4s %lx %9s %lu %s\n", &start, &end, perm, &offset, dev, &inode, name);
+			if (ret >= 6) {
+				if (name[0] == '[') {
+                    // heap segment, should break out.
+                    break;
+                }
 				if (perm[0] == 'r' && perm[1] == '-' && perm[2] == 'x' && name[0] == '/') {
-					long unsigned int  seg_start = ZEND_MM_ALIGNED_SIZE_EX(start, huge_page_size);
-					long unsigned int  seg_end = (end & ~(huge_page_size-1L));
-					long unsigned int  real_end;
+					char *is_substring = strstr(name, __progname);
+					if (is_substring != NULL) {
+						// find the php text segment to map into huge pages
+						long unsigned int  seg_start = ZEND_MM_ALIGNED_SIZE_EX(start, huge_page_size);
+						long unsigned int  seg_end = (end & ~(huge_page_size-1L));
+						long unsigned int  real_end;
 
-					ret = fscanf(f, "%lx-", &start);
-					if (ret == 1 && start == seg_end + huge_page_size) {
-						real_end = end;
-						seg_end = start;
+						ret = fscanf(f, "%lx-", &start);
+						if (ret == 1 && start == seg_end + huge_page_size) {
+							real_end = end;
+							seg_end = start;
+						} else {
+							real_end = seg_end;
+						}
+
+						if (seg_end > seg_start) {
+							zend_accel_error(ACCEL_LOG_DEBUG, "remap to huge page %lx-%lx %s \n", seg_start, seg_end, name);
+							accel_remap_huge_pages((void*)seg_start, seg_end - seg_start, real_end - seg_start, name, offset + seg_start - start);
+						}
+						break;
 					} else {
-						real_end = seg_end;
+						continue;
 					}
-
-					if (seg_end > seg_start) {
-						zend_accel_error(ACCEL_LOG_DEBUG, "remap to huge page %lx-%lx %s \n", seg_start, seg_end, name);
-						accel_remap_huge_pages((void*)seg_start, seg_end - seg_start, real_end - seg_start, name, offset + seg_start - start);
-					}
-					break;
 				}
 			} else {
 				break;
